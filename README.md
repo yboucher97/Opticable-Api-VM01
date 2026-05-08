@@ -1,290 +1,325 @@
-# Opticable API Platform
+# Opticable-Api-VM01
 
-This repository is the monorepo for the Opticable API platform. It keeps one `main` branch and organizes the platform by service folders, not by branches or endpoints.
+Production VM stack for Opticable automation.
 
-Included services:
+This repository installs and runs three local services on one Linux VM:
 
-- `apps/workflow-api`
-- `apps/password-pdf-service`
-- `apps/omada-site-service`
+- `workflow-api`: public FastAPI webhook/API gateway for Zoho-triggered workflows.
+- `password-pdf-service`: WiFi credential PDF/TXT/ZIP/YA generator with Zoho WorkDrive and CRM updates.
+- `omada-site-service`: TP-Link Omada site/LAN/WLAN/SSID automation service.
 
-Repository docs:
+The normal production path is:
 
-- [Repository Structure](./docs/repository-structure.md)
-- [Architecture](./docs/architecture.md)
-- [API Blueprint](./docs/api-blueprint.md)
-- [Omada Operation Strategy](./docs/omada-operation-strategy.md)
-- [Deploy Notes](./deploy/README.md)
+Zoho CRM Service contract signed -> Workflow API -> Password/PDF service -> WorkDrive -> Omada service -> WorkDrive live snapshot.
 
-## Install On One Linux VM
+## Quick Install
 
-Use the top-level installer to deploy the full stack from this monorepo:
+Run this on a fresh Ubuntu/Debian VM:
 
 ```bash
 sudo SITE_AND_PASSWORD_API_HOST=api01.opticable.ca \
-bash <(curl -fsSL https://raw.githubusercontent.com/yboucher97/opticable-api-platform/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/yboucher97/Opticable-Api-VM01/main/install.sh)
 ```
 
-What it does:
+The installer is idempotent. It can be run again after changing env variables or pulling new code.
 
-- clones or updates this repo into `/opt/opticable-api-platform`
-- installs Python, Node.js, Caddy, and Playwright Chromium
-- creates swap automatically on small VMs when no swap exists
-- creates and enables:
-  - `opticable-password-pdf.service`
-  - `opticable-omada-site.service`
-  - `opticable-workflow-api.service`
-- creates default runtime files:
-  - `/etc/opticable-password-pdf.env`
-  - `/etc/opticable-password-pdf/brand_settings.json`
-  - `/etc/opticable-omada-site.env`
-  - `/etc/opticable-workflow-api.env`
+## Quick Update
+
+After GitHub has new changes, update an installed VM with:
+
+```bash
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/yboucher97/Opticable-Api-VM01/main/scripts/update.sh)
+```
+
+The update command pulls `main` from GitHub and reruns the installer so Python packages, Node packages, built assets, systemd units, Caddy config, and runtime folders match the repository.
+
+## Dumbed-Down Version
+
+- This VM receives Zoho webhooks.
+- It checks the Service payload.
+- If the service is WiFi, it generates SSIDs and passwords.
+- It creates tenant WiFi PDFs and password files.
+- It uploads PDF/TXT/ZIP/YA files into WorkDrive under `Document/Passwords`.
+- It creates/uploads Omada controller files under `Document/Controller`.
+- It signs into Omada and creates or updates the site, VLANs, WLAN groups, and SSIDs.
+- It writes generated SSIDs/passwords back to the Zoho CRM Service record.
+- GitHub `main` is the source of truth.
+- `install.sh` installs everything.
+- `scripts/update.sh` updates everything.
+
+## Runtime Layout
+
+Code:
+
+- `/opt/opticable-api-platform`
+
+Shared credentials:
+
+- `/var/lib/opticable-api-platform/shared/zoho-oauth.json`
+
+PDF service:
+
+- service: `opticable-password-pdf`
+- code: `/opt/opticable-api-platform/apps/password-pdf-service`
+- env: `/etc/opticable-password-pdf.env`
+- config: `/etc/opticable-password-pdf/brand_settings.json`
+- data: `/var/lib/opticable-password-pdf`
+- local health: `http://127.0.0.1:8000/health`
+
+Omada service:
+
+- service: `opticable-omada-site`
+- code: `/opt/opticable-api-platform/apps/omada-site-service`
+- env: `/etc/opticable-omada-site.env`
+- data: `/var/lib/opticable-omada-site`
+- local health: `http://127.0.0.1:3210/api/health`
+
+Workflow service:
+
+- service: `opticable-workflow-api`
+- code: `/opt/opticable-api-platform/apps/workflow-api`
+- env: `/etc/opticable-workflow-api.env`
+- data: `/var/lib/opticable-workflow-api`
+- local health: `http://127.0.0.1:8100/v1/system/health`
+
+Generated runtime snapshot:
+
 - `/root/opticable-api-platform.generated.env`
-- migrates old `password-pdf-generator`, `omada-site-creator`, and `site-and-password-workflow` runtime artifacts to the new `opticable-*` names, then removes the stale units and config files after the new services are running
-- optionally writes one master Caddy site if you provide `SITE_AND_PASSWORD_API_HOST`
 
-Important runtime paths:
+## Public API
 
-- combined code: `/opt/opticable-api-platform`
-- PDF data: `/var/lib/opticable-password-pdf`
-- Omada data: `/var/lib/opticable-omada-site`
-- Workflow data: `/var/lib/opticable-workflow-api`
-- PDF config: `/etc/opticable-password-pdf/brand_settings.json`
-- PDF secrets: `/etc/opticable-password-pdf.env`
-- Omada secrets: `/etc/opticable-omada-site.env`
-- Workflow secrets: `/etc/opticable-workflow-api.env`
-- Generated runtime snapshot: `/root/opticable-api-platform.generated.env`
+When installed with:
 
-Optional installer variables:
+```bash
+SITE_AND_PASSWORD_API_HOST=api01.opticable.ca
+```
 
-- `SITE_AND_PASSWORD_API_HOST`
-- `PASSWORD_PDF_API_KEY`
-- `OMADA_SITE_CREATOR_WEBHOOK_TOKEN`
-- `SITE_AND_PASSWORD_WORKFLOW_API_KEY`
-- `PASSWORD_PDF_ENABLE_WORKDRIVE`
-- `PASSWORD_PDF_ZOHO_REGION`
-- `ZOHO_OAUTH_CLIENT_ID`
-- `ZOHO_OAUTH_CLIENT_SECRET`
-- `ZOHO_OAUTH_ACCOUNTS_BASE_URL`
-- `ZOHO_OAUTH_REDIRECT_URI`
-- `ZOHO_OAUTH_SCOPES`
-- `ZOHO_OAUTH_CREDENTIALS_PATH`
-- `AUTO_SWAP_ENABLED`
-- `AUTO_SWAP_SIZE_GB`
-- `ZOHO_WORKDRIVE_PARENT_FOLDER_ID`
-- `OMADA_SITE_CREATOR_CLOUD_EMAIL`
-- `OMADA_SITE_CREATOR_CLOUD_PASSWORD`
-- `OMADA_SITE_CREATOR_DEVICE_USERNAME`
-- `OMADA_SITE_CREATOR_DEVICE_PASSWORD`
-
-## Included Apps
-
-### Password PDF Service
-
-Location: `apps/password-pdf-service`
-
-Purpose:
-
-- generate WiFi PDFs
-- generate merged PDF, ZIP, and text exports
-- upload the output to Zoho WorkDrive
-
-### Omada Site Service
-
-Location: `apps/omada-site-service`
-
-Purpose:
-
-- receive a plan file
-- authenticate to TP-Link Omada
-- create sites, LANs, WLAN groups, and SSIDs
-
-### Workflow API
-
-Location: `apps/workflow-api`
-
-Purpose:
-
-- receive the Zoho webhook
-- decide whether credentials are generated or predefined
-- run the PDF generator first
-- optionally create the Omada site after PDFs succeed
-
-## Public Endpoint Layout
-
-With `SITE_AND_PASSWORD_API_HOST=api01.opticable.ca`, Caddy exposes:
+Caddy exposes the stack at:
 
 - `https://api01.opticable.ca/`
 - `https://api01.opticable.ca/docs`
 - `https://api01.opticable.ca/openapi.json`
 - `https://api01.opticable.ca/v1/system/health`
 - `https://api01.opticable.ca/v1/system/catalog`
-- `https://api01.opticable.ca/v1/integrations/zoho/oauth/start`
-- `https://api01.opticable.ca/v1/integrations/zoho/oauth/callback`
-- `https://api01.opticable.ca/v1/integrations/zoho/oauth/status`
-- `https://api01.opticable.ca/v1/omada/sites`
-- `https://api01.opticable.ca/v1/omada/sites/{siteId}`
-- `https://api01.opticable.ca/v1/omada/sites/{siteId}/lans`
-- `https://api01.opticable.ca/v1/omada/sites/{siteId}/wlan-groups`
-- `https://api01.opticable.ca/v1/omada/sites/{siteId}/wlan-groups/{wlanId}/ssids`
-- `https://api01.opticable.ca/v1/omada/sites/{siteId}/snapshot`
-- `https://api01.opticable.ca/v1/omada/jobs`
-- `https://api01.opticable.ca/v1/omada/workdrive/jobs`
-- `https://api01.opticable.ca/v1/omada/jobs/{job_id}`
 - `https://api01.opticable.ca/v1/workflows/site-and-password`
 - `https://api01.opticable.ca/v1/workflows/site-and-password/jobs/{job_id}`
+- `https://api01.opticable.ca/v1/integrations/zoho/oauth/start`
+- `https://api01.opticable.ca/v1/integrations/zoho/oauth/status`
 - `https://api01.opticable.ca/pdf/health`
 - `https://api01.opticable.ca/omada/api/health`
-- `https://api01.opticable.ca/workflow/health`
 
-The root host proxies to the workflow API by default, so Zoho can post directly to the canonical workflow route:
+## Detailed: How It Works
 
-- `https://api01.opticable.ca/v1/workflows/site-and-password`
+### 1. Zoho CRM Trigger
 
-Compatibility aliases still work:
+Zoho CRM runs the Deluge function in:
 
-- `https://api01.opticable.ca/v1/site-and-password/webhooks/zoho`
-- `https://api01.opticable.ca/webhooks/zoho/site-and-password`
-- `https://api01.opticable.ca/webhooks/zoho/site-workflow`
-- `https://api01.opticable.ca/health`
-- `https://api01.opticable.ca/jobs/{job_id}`
+- `docs/zoho-deluge-service-contract-signed.dg`
 
-## API Documentation
+The function is meant to run when a CRM `Services` record has a non-empty:
 
-The public workflow service now exposes a real OpenAPI surface:
+- `Service_Contract_Signed_Date`
 
-- Swagger UI: `https://api01.opticable.ca/docs`
-- OpenAPI JSON: `https://api01.opticable.ca/openapi.json`
-- root platform index: `https://api01.opticable.ca/`
+The current workflow tracking fields on `Services` are:
 
-This gives you one documented master API endpoint for current and future webhook-driven apps.
+- `Workflow_API_Job_ID`
+- `Workflow_API_Last_Error`
 
-The Omada domain now starts with GET-first discovery endpoints so callers can resolve site IDs, VLAN/LAN objects, WLAN groups, and SSIDs before using future POST actions.
+The function fetches the Service record, its linked Service Location, and the Service Location WorkDrive folder ID. The folder ID must come from the Service Location only:
 
-The Omada domain also supports direct plan submission:
+- Service Location field: `WorkDrive_Folder_ID`
 
-- `POST /v1/omada/jobs`
-- `GET /v1/omada/jobs/{job_id}`
+If that folder is missing, the workflow stops because the earlier Service Location creation automation failed.
 
-Use that path when you already have an Omada YAML/JSON plan and want the master API host to submit it directly.
+### 2. Workflow API
 
-The Omada domain also supports:
+The Deluge function posts to:
 
-- `POST /v1/omada/workdrive/jobs`
-- YAML-first, TXT-fallback WorkDrive execution
+- `POST /v1/workflows/site-and-password`
 
-- `GET /v1/omada/sites/{siteId}/snapshot`
-- `GET /v1/omada/sites/{siteId}/snapshot?format=yaml`
-- live controller export for review and future update work
+The workflow API normalizes the payload, creates a job ID, and starts a background workflow. It does not do PDF rendering or Omada browser automation itself. It orchestrates the two lower services.
 
-## Zoho OAuth
+Main behavior:
 
-The platform now supports a proper server-side Zoho OAuth flow for WorkDrive and optional CRM access.
-
-Recommended Zoho client type:
-
-- `Server-based Application`
-
-Suggested redirect URI:
-
-- `https://api01.opticable.ca/v1/integrations/zoho/oauth/callback`
-
-Typical setup:
-
-1. set `ZOHO_OAUTH_CLIENT_ID` and `ZOHO_OAUTH_CLIENT_SECRET`
-2. install the VM
-3. open `https://api01.opticable.ca/v1/integrations/zoho/oauth/start?api_key=YOUR_WORKFLOW_API_KEY`
-4. sign in to Zoho and approve access
-5. the platform stores the Zoho OAuth credentials in the shared server credential file
-
-Useful endpoints:
-
-- `GET /v1/integrations/zoho/oauth/start`
-- `GET /v1/integrations/zoho/oauth/callback`
-- `GET /v1/integrations/zoho/oauth/status`
-
-The PDF service reads the shared Zoho credential file automatically, so new tokens are picked up on the next job without restarting the stack.
-
-## Monorepo Conventions
-
-- `main` is the source of truth
-- short-lived feature branches are for changes only, not for separating apps
-- each service lives under `apps/`
-- shared future code should live under `packages/`
-- deployment assets belong under `deploy/` or service-local `deploy/`
-- design and runbook docs belong under `docs/`
-
-## Workflow Modes
-
-Supported webhook flags:
-
-- `credential_mode: generated | predefined`
-- `workflow_mode: pdf_only | pdf_and_site | site_only`
-- `omada_operation: ensure | create | upsert | update`
-
-`generated`:
-
-- send units like `101,102,103`
-- the VM generates SSIDs like `APT_101_XX`
-- the VM generates passwords
-
-`predefined`:
-
-- send final SSIDs and passwords
-- the VM uses them as-is
-
-`pdf_only`:
-
-- creates PDFs, merged PDF, ZIP, and text export
-- uploads to WorkDrive
-- also writes `omada-plan.yaml` and uploads it to WorkDrive
-- skips Omada
-
-`pdf_and_site`:
-
-- creates PDFs first
-- uploads to WorkDrive
-- also writes `omada-plan.yaml` and uploads it to WorkDrive
-- then creates the Omada site from the same generated batch
-
-`site_only`:
-
-- skips PDF/password document generation
+- validates payload
+- generates normalized unit/SSID/password records
+- calls the PDF service first for `pdf_only` and `pdf_and_site`
 - writes `omada-plan.yaml`
-- uploads `omada-plan.yaml` to WorkDrive when `workdrive_folder_id` is provided
-- creates the Omada site directly
+- uploads controller artifacts to WorkDrive under `Document/Controller`
+- calls the Omada service for `site_only` and `pdf_and_site`
+- stores workflow job JSON under `/var/lib/opticable-workflow-api/output/jobs`
 
-## Current Omada Update Behavior
+### 3. Password/PDF Service
 
-Current Omada execution supports:
+The PDF service receives generated or predefined WiFi credential records.
 
-- `ensure`
-- `create`
-- `upsert`
-- `update`
+For generated credentials:
 
-What works today:
+- input `Units`: raw values such as `101,102,101a`
+- output `SSIDs`: generated final SSIDs
+- output `Passwords`: generated passwords
 
-- existing SSIDs can be updated in place
-- new SSIDs, WLAN groups, and LANs can be created when allowed by the mutation mode
-- password rotation can be done by generating new passwords and using `omada_operation=update`
+The service creates:
 
-Still conservative today:
+- one PDF per unit
+- merged PDF
+- TXT export
+- ZIP export
+- YA export
 
-- if an existing LAN conflicts with the desired definition, the run fails
-- WLAN-group renaming is not implemented
-- live snapshots should still be used to review the controller state before larger update work
+Then it uploads them to WorkDrive:
 
-That is intentional for now, because keeping an SSID inside the same existing WLAN group is the safe way to preserve AP assignment. The next build step should add explicit update modes instead of silent overwrite behavior.
+```text
+Service Location folder
+  Document
+    Passwords
+      individual PDFs
+      merged PDF
+      TXT
+      ZIP
+      YA
+```
 
-## Suggested Deployment Model
+It also updates the Zoho CRM Service record:
 
-- expose only the workflow/webhook entrypoint publicly
-- keep the PDF generator and Omada creator on localhost behind Caddy or another reverse proxy
-- run each app from its own runtime environment
+- `SSIDs`
+- `Passwords`
 
-## Notes
+### 4. Omada Service
 
-- This is the main monorepo for the combined system.
-- Build artifacts, runtime data, and nested Git metadata are intentionally excluded.
-- The older standalone workflow repo can be retired after you finish this migration.
+The Omada service receives a YAML/JSON Omada plan from the workflow API.
+
+It uses Playwright Chromium to sign into the TP-Link Omada cloud portal and apply:
+
+- organization selection: default `Opticable`
+- site create/update
+- LAN/VLAN create/update
+- WLAN group create/update
+- SSID create/update
+
+The service now detects expired Omada sessions and attempts automatic sign-in using:
+
+- `OMADA_SITE_CREATOR_CLOUD_EMAIL`
+- `OMADA_SITE_CREATOR_CLOUD_PASSWORD`
+
+It reuses the persistent browser profile at:
+
+- `/var/lib/opticable-omada-site/data/browser-profile`
+
+That keeps a valid session between runs and reduces repeated login challenges.
+
+### 5. WorkDrive Folder Rules
+
+The workflow expects the Service Location root folder ID from CRM.
+
+Below that folder, the VM creates missing folders as needed:
+
+```text
+Service Location folder
+  Document
+    Passwords
+    Controller
+```
+
+Password/PDF files go to:
+
+- `Document/Passwords`
+
+Omada plan and live-site artifacts go to:
+
+- `Document/Controller`
+
+### 6. Zoho OAuth
+
+The stack uses one shared Zoho OAuth credential file:
+
+- `/var/lib/opticable-api-platform/shared/zoho-oauth.json`
+
+To connect Zoho after install:
+
+1. Set `ZOHO_OAUTH_CLIENT_ID` and `ZOHO_OAUTH_CLIENT_SECRET`.
+2. Install/reinstall the VM.
+3. Open:
+
+```text
+https://api01.opticable.ca/v1/integrations/zoho/oauth/start?api_key=YOUR_WORKFLOW_API_KEY
+```
+
+4. Approve access.
+5. Check:
+
+```text
+https://api01.opticable.ca/v1/integrations/zoho/oauth/status
+```
+
+Do not commit OAuth tokens, API keys, `.env` files, or runtime snapshots.
+
+## Installer Variables
+
+Common variables:
+
+- `SITE_AND_PASSWORD_API_HOST`
+- `SITE_AND_PASSWORD_CREATOR_REPO_URL`
+- `SITE_AND_PASSWORD_CREATOR_REPO_REF`
+- `SITE_AND_PASSWORD_CREATOR_INSTALL_DIR`
+- `PASSWORD_PDF_API_KEY`
+- `OMADA_SITE_CREATOR_WEBHOOK_TOKEN`
+- `SITE_AND_PASSWORD_WORKFLOW_API_KEY`
+- `OMADA_ORGANIZATION_NAME`
+- `OMADA_SITE_CREATOR_CLOUD_EMAIL`
+- `OMADA_SITE_CREATOR_CLOUD_PASSWORD`
+- `OMADA_SITE_CREATOR_DEVICE_USERNAME`
+- `OMADA_SITE_CREATOR_DEVICE_PASSWORD`
+- `ZOHO_OAUTH_CLIENT_ID`
+- `ZOHO_OAUTH_CLIENT_SECRET`
+- `ZOHO_OAUTH_REDIRECT_URI`
+- `ZOHO_OAUTH_SCOPES`
+- `ZOHO_OAUTH_CREDENTIALS_PATH`
+- `PASSWORD_PDF_ZOHO_REGION`
+- `AUTO_SWAP_ENABLED`
+- `AUTO_SWAP_SIZE_GB`
+
+## Service Commands
+
+```bash
+sudo systemctl status opticable-workflow-api --no-pager
+sudo systemctl status opticable-password-pdf --no-pager
+sudo systemctl status opticable-omada-site --no-pager
+```
+
+```bash
+sudo journalctl -u opticable-workflow-api -f
+sudo journalctl -u opticable-password-pdf -f
+sudo journalctl -u opticable-omada-site -f
+```
+
+```bash
+curl http://127.0.0.1:8100/v1/system/health
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:3210/api/health
+```
+
+## Repository Structure
+
+```text
+.
+├── apps/
+│   ├── workflow-api/
+│   ├── password-pdf-service/
+│   └── omada-site-service/
+├── deploy/
+├── docs/
+├── scripts/
+│   └── update.sh
+├── install.sh
+└── README.md
+```
+
+## Source Of Truth
+
+- GitHub repo: `yboucher97/Opticable-Api-VM01`
+- branch: `main`
+- install command: `install.sh`
+- update command: `scripts/update.sh`
+
+Local production secrets live in `/etc/*.env` and `/var/lib/...`; they do not belong in Git.

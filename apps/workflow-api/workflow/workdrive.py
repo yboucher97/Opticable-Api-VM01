@@ -15,7 +15,12 @@ class WorkflowWorkDriveError(RuntimeError):
 
 
 class WorkflowWorkDriveClient:
-    def __init__(self, oauth_settings: ZohoOAuthSettings, logger, target_folder_name: str = "Document locataire") -> None:
+    def __init__(
+        self,
+        oauth_settings: ZohoOAuthSettings,
+        logger,
+        target_folder_name: str = "Document/Controller",
+    ) -> None:
         self.oauth_settings = oauth_settings
         self.logger = logger
         self.target_folder_name = target_folder_name.strip()
@@ -115,25 +120,43 @@ class WorkflowWorkDriveClient:
         if not self.target_folder_name:
             return parent_folder_id
 
-        child_id = self._find_child_folder_id(client, headers, parent_folder_id)
-        if child_id:
-            return child_id
+        folder_id = parent_folder_id
+        for folder_name in self._target_folder_parts():
+            child_id = self._find_child_folder_id(client, headers, folder_id, folder_name)
+            if child_id:
+                folder_id = child_id
+                continue
 
-        self.logger.info(
-            "Workflow WorkDrive child folder '%s' was missing inside parent %s. Creating it now.",
-            self.target_folder_name,
-            parent_folder_id,
-        )
-        return self._create_child_folder_id(client, headers, parent_folder_id)
+            self.logger.info(
+                "Workflow WorkDrive child folder '%s' was missing inside parent %s. Creating it now.",
+                folder_name,
+                folder_id,
+            )
+            folder_id = self._create_child_folder_id(client, headers, folder_id, folder_name)
+        return folder_id
 
     def _resolve_read_folder_id(self, client: httpx.Client, headers: dict[str, str], parent_folder_id: str) -> str:
         if not self.target_folder_name:
             return parent_folder_id
 
-        child_id = self._find_child_folder_id(client, headers, parent_folder_id)
-        return child_id or parent_folder_id
+        folder_id = parent_folder_id
+        for folder_name in self._target_folder_parts():
+            child_id = self._find_child_folder_id(client, headers, folder_id, folder_name)
+            if not child_id:
+                return parent_folder_id
+            folder_id = child_id
+        return folder_id
 
-    def _find_child_folder_id(self, client: httpx.Client, headers: dict[str, str], parent_folder_id: str) -> str | None:
+    def _target_folder_parts(self) -> list[str]:
+        return [part.strip() for part in self.target_folder_name.split("/") if part.strip()]
+
+    def _find_child_folder_id(
+        self,
+        client: httpx.Client,
+        headers: dict[str, str],
+        parent_folder_id: str,
+        target_folder_name: str,
+    ) -> str | None:
         response = client.get(
             f"{self._api_base_url()}/files/{parent_folder_id}/files",
             headers=headers,
@@ -149,23 +172,28 @@ class WorkflowWorkDriveClient:
             attributes = item.get("attributes") if isinstance(item, dict) else None
             if not isinstance(attributes, dict):
                 continue
-            if str(attributes.get("name", "")).strip() == self.target_folder_name:
+            if str(attributes.get("name", "")).strip().casefold() == target_folder_name.casefold():
                 folder_id = item.get("id")
                 if folder_id:
                     return str(folder_id)
         return None
 
-    def _create_child_folder_id(self, client: httpx.Client, headers: dict[str, str], parent_folder_id: str) -> str:
+    def _create_child_folder_id(
+        self,
+        client: httpx.Client,
+        headers: dict[str, str],
+        parent_folder_id: str,
+        target_folder_name: str,
+    ) -> str:
         response = client.post(
             f"{self._api_base_url()}/files",
-            headers=headers,
+            headers={**headers, "Content-Type": "application/vnd.api+json"},
             json={
                 "data": {
                     "type": "files",
                     "attributes": {
-                        "name": self.target_folder_name,
+                        "name": target_folder_name,
                         "parent_id": parent_folder_id,
-                        "type": "folder",
                     },
                 }
             },

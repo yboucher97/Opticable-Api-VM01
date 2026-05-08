@@ -21,7 +21,7 @@ Top-level structure:
 ```yaml
 version: 1
 controller:
-  organizationName: Opti-plex
+  organizationName: Opticable
   baseUrl: https://use1-omada-cloud.tplinkcloud.com/
   browserChannel: msedge
   headless: false
@@ -192,7 +192,7 @@ Example: JSON body with `plan`
   "plan": {
     "version": 1,
     "controller": {
-      "organizationName": "Opti-plex",
+      "organizationName": "Opticable",
       "baseUrl": "https://use1-omada-cloud.tplinkcloud.com/",
       "browserChannel": "msedge",
       "headless": false

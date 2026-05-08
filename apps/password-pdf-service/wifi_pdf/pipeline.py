@@ -176,6 +176,7 @@ class WifiPdfPipeline:
             crm_update = crm_client.update_generated_password_fields(
                 record_id=batch.crm_record_id,
                 passwords=[record.password or "" for record in batch.records],
+                ssids=[record.ssid for record in batch.records],
             )
 
         if not self.settings.output.keep_qr_images and not deleted_local_batch:

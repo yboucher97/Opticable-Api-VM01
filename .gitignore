@@ -8,11 +8,29 @@ apps/omada-site-creator/dist/
 apps/omada-site-creator/data/
 apps/omada-site-creator/release/
 apps/omada-site-creator/output/
+apps/omada-site-service/node_modules/
+apps/omada-site-service/dist/
+apps/omada-site-service/data/
+apps/omada-site-service/release/
+apps/omada-site-service/output/
 
 apps/password-pdf-generator/.venv/
 apps/password-pdf-generator/output/
+apps/password-pdf-service/.venv/
+apps/password-pdf-service/output/
+apps/password-pdf-service/**/__pycache__/
 apps/site-and-password-workflow/.venv/
 apps/site-and-password-workflow/output/
 apps/site-and-password-workflow/**/__pycache__/
+apps/workflow-api/.venv/
+apps/workflow-api/output/
+apps/workflow-api/**/__pycache__/
+
+*.env
+*.env.*
+!*.env.example
+*token*
+*secret*
+zoho-oauth.json
 
 *.log

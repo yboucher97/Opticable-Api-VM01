@@ -41,15 +41,10 @@ class ZohoWorkDriveClient:
         timeout = httpx.Timeout(60.0, connect=20.0)
         with httpx.Client(timeout=timeout) as client:
             headers = self._get_auth_headers(client)
-            child_folder_id = self._find_or_create_child_folder_id(
-                client=client,
-                headers=headers,
-                parent_folder_id=parent_folder_id,
-                target_folder_name=target_folder_name,
-            )
+            child_folder_id = self._find_or_create_folder_path_id(client, headers, parent_folder_id, target_folder_name)
 
         self.logger.info(
-            "Resolved WorkDrive upload folder '%s' inside parent %s -> %s",
+            "Resolved WorkDrive upload folder path '%s' inside parent %s -> %s",
             target_folder_name,
             parent_folder_id,
             child_folder_id,
@@ -237,6 +232,26 @@ class ZohoWorkDriveClient:
             offset += limit
 
         return None
+
+    def _find_or_create_folder_path_id(
+        self,
+        client: httpx.Client,
+        headers: dict[str, str],
+        parent_folder_id: str,
+        target_folder_path: str,
+    ) -> str:
+        folder_id = parent_folder_id
+        for target_folder_name in self._target_folder_parts(target_folder_path):
+            folder_id = self._find_or_create_child_folder_id(
+                client=client,
+                headers=headers,
+                parent_folder_id=folder_id,
+                target_folder_name=target_folder_name,
+            )
+        return folder_id
+
+    def _target_folder_parts(self, target_folder_path: str) -> list[str]:
+        return [part.strip() for part in target_folder_path.split("/") if part.strip()]
 
     def _create_child_folder_id(
         self,

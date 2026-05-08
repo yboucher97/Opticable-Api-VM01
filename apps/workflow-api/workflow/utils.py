@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+from html import unescape
 from typing import Any
 
 
@@ -36,8 +37,20 @@ def get_first(mapping: dict[str, Any], keys: tuple[str, ...]) -> Any:
 def clean_scalar(value: Any) -> str | None:
     if value is None:
         return None
-    text = str(value).strip()
+    text = normalize_rich_text(str(value)).strip()
     return text or None
+
+
+def normalize_rich_text(value: str) -> str:
+    text = unescape(value)
+    text = re.sub(r"(?i)<\s*br\s*/?\s*>", "\n", text)
+    text = re.sub(r"(?i)</\s*(div|p|li|tr|td|th|h[1-6])\s*>", "\n", text)
+    text = re.sub(r"(?s)<[^>]*>", "", text)
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
 
 
 def parse_string_list(value: Any, field_name: str) -> list[str]:

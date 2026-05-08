@@ -130,7 +130,7 @@ def load_settings() -> AppSettings:
             webhook_token=os.getenv("OMADA_SITE_CREATOR_WEBHOOK_TOKEN", ""),
             poll_interval_seconds=_env_int("OMADA_SITE_CREATOR_POLL_INTERVAL_SECONDS", 2),
             timeout_seconds=_env_int("OMADA_SITE_CREATOR_TIMEOUT_SECONDS", 900),
-            organization_name=os.getenv("OMADA_ORGANIZATION_NAME", "Opti-plex"),
+            organization_name=os.getenv("OMADA_ORGANIZATION_NAME", "Opticable"),
             cloud_base_url=os.getenv("OMADA_CLOUD_BASE_URL", "https://use1-omada-cloud.tplinkcloud.com/"),
             browser_channel=os.getenv("OMADA_BROWSER_CHANNEL", "chromium"),
             headless=_env_bool("OMADA_HEADLESS", True),

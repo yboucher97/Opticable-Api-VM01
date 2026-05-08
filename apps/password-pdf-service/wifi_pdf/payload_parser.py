@@ -5,6 +5,7 @@ import json
 import secrets
 import string
 from io import StringIO
+from html import unescape
 import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -65,8 +66,20 @@ def _clean_scalar(value: Any) -> str | None:
     text = _stringify(value)
     if text is None:
         return None
-    cleaned = text.strip()
+    cleaned = normalize_rich_text(text).strip()
     return cleaned or None
+
+
+def normalize_rich_text(value: str) -> str:
+    text = unescape(value)
+    text = re.sub(r"(?i)<\s*br\s*/?\s*>", "\n", text)
+    text = re.sub(r"(?i)</\s*(div|p|li|tr|td|th|h[1-6])\s*>", "\n", text)
+    text = re.sub(r"(?s)<[^>]*>", "", text)
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
 
 
 def _load_json_list(text: str, field_name: str) -> list[str] | None:
@@ -92,6 +105,7 @@ def _clean_csv_token(value: Any, field_name: str) -> str | None:
 
 
 def _parse_delimited_string(text: str, field_name: str) -> list[str]:
+    text = normalize_rich_text(text)
     json_list = _load_json_list(text, field_name)
     if json_list is not None:
         return json_list

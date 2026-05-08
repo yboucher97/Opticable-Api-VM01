@@ -16,7 +16,7 @@ class ZohoCrmClient:
         self.logger = logger
         self._access_token: str | None = None
 
-    def update_generated_password_fields(self, record_id: str, passwords: list[str]) -> dict[str, Any]:
+    def update_generated_password_fields(self, record_id: str, passwords: list[str], ssids: list[str] | None = None) -> dict[str, Any]:
         if not record_id:
             raise ConfigurationError("CRM update requested but no crm_record_id was provided.")
 
@@ -24,13 +24,16 @@ class ZohoCrmClient:
         primary_values = passwords[:primary_limit]
         overflow_values = passwords[primary_limit:]
 
+        update_fields = {
+            self.crm_settings.primary_password_field: ",".join(primary_values),
+        }
+        if self.crm_settings.generated_ssids_field and ssids:
+            update_fields[self.crm_settings.generated_ssids_field] = ",".join(ssids)
+        if self.crm_settings.overflow_password_field and overflow_values:
+            update_fields[self.crm_settings.overflow_password_field] = ",".join(overflow_values)
+
         payload = {
-            "data": [
-                {
-                    self.crm_settings.primary_password_field: ",".join(primary_values),
-                    self.crm_settings.overflow_password_field: ",".join(overflow_values),
-                }
-            ]
+            "data": [update_fields]
         }
 
         timeout = httpx.Timeout(60.0, connect=20.0)
@@ -61,6 +64,7 @@ class ZohoCrmClient:
             "status_code": response.status_code,
             "primary_count": len(primary_values),
             "overflow_count": len(overflow_values),
+            "ssid_count": len(ssids or []),
             "response": data,
         }
 

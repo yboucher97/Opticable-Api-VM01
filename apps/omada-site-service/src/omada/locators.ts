@@ -16,7 +16,7 @@ export async function findFirstVisible(
     const locator = candidate(root);
 
     try {
-      const count = await locator.count();
+      const count = await withTimeout(locator.count(), timeoutMs, 0);
 
       for (let index = 0; index < Math.min(count, 8); index += 1) {
         const current = locator.nth(index);
@@ -33,6 +33,22 @@ export async function findFirstVisible(
   return null;
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timeout = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 export async function clickFirstVisible(
   root: QueryRoot,
   description: string,
@@ -45,7 +61,7 @@ export async function clickFirstVisible(
     throw new Error(`${description} was not found in the current Omada page.`);
   }
 
-  await locator.click();
+  await locator.click({ timeout: Math.max(timeoutMs, 5000) });
 }
 
 export async function fillFirstVisible(
@@ -61,6 +77,23 @@ export async function fillFirstVisible(
     throw new Error(`${description} input was not found in the current Omada page.`);
   }
 
-  await locator.fill("");
-  await locator.fill(value);
+  const actionTimeout = Math.max(timeoutMs, 5000);
+  try {
+    await locator.fill("", { timeout: actionTimeout });
+    await locator.fill(value, { timeout: actionTimeout });
+  } catch (error) {
+    await locator.evaluate((element, nextValue) => {
+      if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+        throw new Error("Target element is not a text input.");
+      }
+
+      element.focus();
+      element.value = String(nextValue);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      element.blur();
+    }, value).catch(() => {
+      throw error;
+    });
+  }
 }

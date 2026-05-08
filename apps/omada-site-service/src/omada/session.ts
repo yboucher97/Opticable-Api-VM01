@@ -1,6 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import type { BrowserContext, Page } from "playwright";
 import { chromium } from "playwright";
 
@@ -123,7 +121,7 @@ async function waitForLoginRedirect(page: Page, timeoutMs = 90000): Promise<bool
 
   while (Date.now() - startedAt < timeoutMs) {
     const currentUrl = page.url();
-    if (!currentUrl.includes("id.tplinkcloud.com")) {
+    if (!currentUrl.includes("id.tplinkcloud.com") && !(await isCloudLoginPage(page))) {
       await dismissPostLoginPrompts(page);
       return true;
     }
@@ -139,17 +137,51 @@ async function waitForLoginRedirect(page: Page, timeoutMs = 90000): Promise<bool
   return false;
 }
 
+export async function isCloudLoginPage(page: Page): Promise<boolean> {
+  if (page.url().includes("id.tplinkcloud.com")) {
+    return true;
+  }
+
+  const emailInput = await findFirstVisible(page, [
+    (root) => root.locator("#form_item_email"),
+    (root) => root.getByPlaceholder(/Email/i),
+    (root) => root.locator("input[type='text']"),
+  ], 700);
+
+  if (!emailInput) {
+    return false;
+  }
+
+  const passwordInput = await findFirstVisible(page, [
+    (root) => root.locator("#form_item_password"),
+    (root) => root.getByPlaceholder(/Password/i),
+    (root) => root.locator("input[type='password']"),
+  ], 700);
+
+  if (!passwordInput) {
+    return false;
+  }
+
+  const signInButton = await findFirstVisible(page, [
+    (root) => root.getByRole("button", { name: /^Sign In$/i }),
+    (root) => root.getByText(/^Sign In$/i),
+    (root) => root.locator("a").filter({ hasText: /^Sign In$/i }),
+  ], 700);
+
+  return Boolean(signInButton);
+}
+
 async function attemptAutomaticCloudLogin(page: Page, controller: ControllerSettings): Promise<boolean> {
   const cloudAccount = resolveCloudAccount(controller);
   if (!cloudAccount) {
     return false;
   }
 
-  if (!page.url().includes("id.tplinkcloud.com")) {
+  if (!page.url().includes("id.tplinkcloud.com") && !(await isCloudLoginPage(page))) {
     return true;
   }
 
-  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => undefined);
   await page.waitForTimeout(1000);
 
   await fillFirstVisible(page, "TP-Link cloud email", cloudAccount.email, [
@@ -172,7 +204,7 @@ async function attemptAutomaticCloudLogin(page: Page, controller: ControllerSett
 
   let redirectSucceeded = await waitForLoginRedirect(page, 45000);
   if (!redirectSucceeded) {
-    await page.locator("#form_item_password").press("Enter").catch(() => undefined);
+    await page.locator("#form_item_password").press("Enter", { timeout: 5000 }).catch(() => undefined);
     redirectSucceeded = await waitForLoginRedirect(page, 45000);
   }
 
@@ -189,7 +221,7 @@ async function attemptAutomaticCloudLogin(page: Page, controller: ControllerSett
 }
 
 export async function recoverCloudLogin(page: Page, controller: ControllerSettings): Promise<boolean> {
-  if (!page.url().includes("id.tplinkcloud.com")) {
+  if (!page.url().includes("id.tplinkcloud.com") && !(await isCloudLoginPage(page))) {
     return true;
   }
 
@@ -199,6 +231,10 @@ export async function recoverCloudLogin(page: Page, controller: ControllerSettin
   }
 
   await navigateToOrgManager(page, controller);
+  await page.waitForTimeout(5000);
+  if (page.url().includes("id.tplinkcloud.com") || await isCloudLoginPage(page)) {
+    return false;
+  }
   return true;
 }
 
@@ -249,15 +285,15 @@ export async function withAuthenticatedSession<T>(
     throw new Error("Close the interactive login browser before starting a run.");
   }
 
-  const useEphemeralProfile = Boolean(resolveCloudAccount(controller));
-  const profileDir = useEphemeralProfile ? await mkdtemp(join(tmpdir(), "omada-run-")) : browserProfileDir;
+  const useEphemeralProfile = false;
+  const profileDir = browserProfileDir;
   const context = await chromium.launchPersistentContext(profileDir, buildOptions(controller, false));
 
   try {
     const page = context.pages()[0] ?? await context.newPage();
     await navigateToOrgManager(page, controller);
 
-    if (page.url().includes("id.tplinkcloud.com")) {
+    if (page.url().includes("id.tplinkcloud.com") || await isCloudLoginPage(page)) {
       const loggedIn = await recoverCloudLogin(page, controller);
       if (!loggedIn) {
         throw new Error("Stored session is not logged in. Open the login browser first, or set OMADA_SITE_CREATOR_CLOUD_EMAIL and OMADA_SITE_CREATOR_CLOUD_PASSWORD for automatic login.");

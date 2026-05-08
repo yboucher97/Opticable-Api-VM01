@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="opticable-api-platform"
-REPO_URL="${SITE_AND_PASSWORD_CREATOR_REPO_URL:-https://github.com/yboucher97/opticable-api-platform.git}"
+APP_NAME="Opticable-Api-VM01"
+REPO_URL="${SITE_AND_PASSWORD_CREATOR_REPO_URL:-https://github.com/yboucher97/Opticable-Api-VM01.git}"
 REPO_REF="${SITE_AND_PASSWORD_CREATOR_REPO_REF:-main}"
 INSTALL_DIR="${SITE_AND_PASSWORD_CREATOR_INSTALL_DIR:-/opt/opticable-api-platform}"
 
@@ -104,7 +104,7 @@ resolve_zoho_accounts_base() {
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
-    fail "Run this installer as root. Example: sudo bash <(curl -fsSL https://raw.githubusercontent.com/yboucher97/opticable-api-platform/main/install.sh)"
+    fail "Run this installer as root. Example: sudo bash <(curl -fsSL https://raw.githubusercontent.com/yboucher97/Opticable-Api-VM01/main/install.sh)"
   fi
 }
 
@@ -472,10 +472,12 @@ write_omada_env() {
   OMADA_DATA_DIR="${OMADA_DATA_DIR}" \
   OMADA_PLAYWRIGHT_BROWSERS_PATH="${OMADA_PLAYWRIGHT_BROWSERS_PATH}" \
   OMADA_SITE_CREATOR_WEBHOOK_TOKEN="${OMADA_SITE_CREATOR_WEBHOOK_TOKEN}" \
+  OMADA_ORGANIZATION_NAME="${OMADA_ORGANIZATION_NAME:-Opticable}" \
   OMADA_SITE_CREATOR_CLOUD_EMAIL="${OMADA_SITE_CREATOR_CLOUD_EMAIL:-}" \
   OMADA_SITE_CREATOR_CLOUD_PASSWORD="${OMADA_SITE_CREATOR_CLOUD_PASSWORD:-}" \
   OMADA_SITE_CREATOR_DEVICE_USERNAME="${OMADA_SITE_CREATOR_DEVICE_USERNAME:-}" \
   OMADA_SITE_CREATOR_DEVICE_PASSWORD="${OMADA_SITE_CREATOR_DEVICE_PASSWORD:-}" \
+  OMADA_ORGANIZATION_NAME="${OMADA_ORGANIZATION_NAME:-Opticable}" \
   python3 - <<'PY'
 import os
 from pathlib import Path
@@ -498,6 +500,7 @@ defaults = {
     "OMADA_SITE_CREATOR_WEBHOOK_TOKEN": os.environ["OMADA_SITE_CREATOR_WEBHOOK_TOKEN"],
     "OMADA_SITE_CREATOR_HEADLESS": "true",
     "OMADA_SITE_CREATOR_BROWSER_CHANNEL": "chromium",
+    "OMADA_ORGANIZATION_NAME": os.environ["OMADA_ORGANIZATION_NAME"],
 }
 
 for key, value in defaults.items():
@@ -530,6 +533,7 @@ ordered = [
     "OMADA_SITE_CREATOR_WEBHOOK_TOKEN",
     "OMADA_SITE_CREATOR_HEADLESS",
     "OMADA_SITE_CREATOR_BROWSER_CHANNEL",
+    "OMADA_ORGANIZATION_NAME",
     "OMADA_SITE_CREATOR_CLOUD_EMAIL",
     "OMADA_SITE_CREATOR_CLOUD_PASSWORD",
     "OMADA_SITE_CREATOR_DEVICE_USERNAME",
@@ -601,6 +605,7 @@ write_workflow_env() {
   OMADA_SITE_CREATOR_CLOUD_PASSWORD="${OMADA_SITE_CREATOR_CLOUD_PASSWORD:-}" \
   OMADA_SITE_CREATOR_DEVICE_USERNAME="${OMADA_SITE_CREATOR_DEVICE_USERNAME:-}" \
   OMADA_SITE_CREATOR_DEVICE_PASSWORD="${OMADA_SITE_CREATOR_DEVICE_PASSWORD:-}" \
+  OMADA_ORGANIZATION_NAME="${OMADA_ORGANIZATION_NAME:-Opticable}" \
   ZOHO_OAUTH_CLIENT_ID="${ZOHO_OAUTH_CLIENT_ID:-}" \
   ZOHO_OAUTH_CLIENT_SECRET="${ZOHO_OAUTH_CLIENT_SECRET:-}" \
   ZOHO_OAUTH_SCOPES="${ZOHO_OAUTH_SCOPES}" \
@@ -635,7 +640,7 @@ defaults = {
     "OMADA_SITE_CREATOR_BASE_URL": "http://127.0.0.1:3210",
     "OMADA_SITE_CREATOR_WEBHOOK_TOKEN": os.environ["OMADA_SITE_CREATOR_WEBHOOK_TOKEN"],
     "OMADA_SITE_CREATOR_TIMEOUT_SECONDS": "900",
-    "OMADA_ORGANIZATION_NAME": "Opti-plex",
+    "OMADA_ORGANIZATION_NAME": os.environ["OMADA_ORGANIZATION_NAME"],
     "OMADA_CLOUD_BASE_URL": "https://use1-omada-cloud.tplinkcloud.com/",
     "OMADA_BROWSER_CHANNEL": "chromium",
     "OMADA_HEADLESS": "true",

@@ -1,0 +1,353 @@
+/*
+  Zoho CRM custom function: Service Contract Signed -> Opticable WiFi workflow
+
+  Trigger recommendation:
+  - Module: Services
+  - On edit
+  - Criteria:
+      Service_Contract_Signed_Date is not empty
+      Type_de_service is Wifi Installation
+      Workflow_API_Job_ID is empty
+
+  Input argument:
+  - serviceId: Services record id
+
+  Required connection/secret handling:
+  - Replace WORKFLOW_API_KEY with a secure value. Prefer a Zoho variable or
+    encrypted org variable if available in your CRM edition.
+
+  This sends one payload to:
+    POST https://api01.opticable.ca/v1/workflows/site-and-password
+
+  The VM will:
+  - generate WiFi passwords when credential_mode=generated
+  - generate tenant PDFs, merged PDF, TXT, ZIP, and YA files
+  - create/use Document/Passwords below the Service Location folder
+  - upload generated PDF/TXT/ZIP/YA files into Passwords
+  - build and upload omada-plan.yaml
+  - create/use Document/Controller below the Service Location folder
+  - upload Omada/controller artifacts into Controller
+  - create/update the Omada site
+*/
+
+serviceModule = "Services";
+dealModule = "Deals";
+accountModule = "Accounts";
+locationModule = "Service_Locations";
+
+workflowUrl = "https://api01.opticable.ca/v1/workflows/site-and-password";
+workflowApiKey = "REPLACE_WITH_SITE_WORKFLOW_API_KEY";
+
+wifiServiceType = "Wifi Installation";
+
+/*
+  Adjust these API names to your CRM.
+*/
+fieldServiceType = "Type_de_service";
+fieldContractSignedDate = "Service_Contract_Signed_Date";
+fieldWorkflowJobId = "Workflow_API_Job_ID";
+fieldWorkflowLastError = "Workflow_API_Last_Error";
+
+fieldDealLookup = "Linked_Deal";
+fieldLocationLookup = "Linked_Service_Location";
+
+fieldServiceName = "Name";
+fieldLocationFolderId = "WorkDrive_Folder_ID";
+
+fieldLocationAccountLookup = "Account";
+fieldLocationName = "Name";
+fieldLocationStreet = "Street";
+fieldLocationPostalCode = "Postal_Code";
+fieldLocationCity = "City";
+
+fieldUnitList = "Units";
+fieldGeneratedSsidList = "SSIDs";
+fieldPasswordList = "Passwords";
+
+defaultCredentialMode = "generated";
+defaultWorkflowMode = "pdf_and_site";
+defaultOmadaOperation = "upsert";
+defaultTemplateName = "Opticable_Template_01";
+defaultOmadaRegion = "Canada";
+defaultOmadaTimezone = "America/Toronto";
+defaultOmadaScenario = "Office";
+defaultSsidPrefix = "APT_";
+defaultSsidTemplate = "{prefix}{identifier}_{suffix}";
+defaultSsidSuffixLength = 2;
+
+service = zoho.crm.getRecordById(serviceModule, serviceId);
+if(service == null || service.isEmpty())
+{
+	info "Service record not found: " + serviceId;
+	return;
+}
+
+signedDate = ifnull(service.get(fieldContractSignedDate), "");
+if(signedDate == "")
+{
+	info "Skipped. Service contract signed date is empty.";
+	return;
+}
+
+existingJobId = ifnull(service.get(fieldWorkflowJobId), "");
+if(existingJobId != "")
+{
+	info "Skipped. Workflow job already exists: " + existingJobId;
+	return;
+}
+
+serviceType = ifnull(service.get(fieldServiceType), "");
+if(serviceType != wifiServiceType)
+{
+	info "Skipped. Service type is not " + wifiServiceType + ": " + serviceType;
+	return;
+}
+
+dealId = "";
+dealName = "";
+dealLookup = service.get(fieldDealLookup);
+if(dealLookup != null)
+{
+	dealId = ifnull(dealLookup.get("id"), "");
+	dealName = ifnull(dealLookup.get("name"), "");
+}
+
+locationId = "";
+locationName = "";
+locationLookup = service.get(fieldLocationLookup);
+if(locationLookup != null)
+{
+	locationId = ifnull(locationLookup.get("id"), "");
+	locationName = ifnull(locationLookup.get("name"), "");
+}
+if(locationId == "")
+{
+	updateMap = Map();
+	updateMap.put(fieldWorkflowLastError, "Missing Service Location lookup on Service. Check field API name: " + fieldLocationLookup);
+	zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+	info "Stopped. Missing Service Location lookup on Service. Check field API name: " + fieldLocationLookup;
+	return;
+}
+
+deal = Map();
+if(dealId != "")
+{
+	deal = zoho.crm.getRecordById(dealModule, dealId);
+}
+
+location = Map();
+if(locationId != "")
+{
+	location = zoho.crm.getRecordById(locationModule, locationId);
+}
+
+accountId = "";
+accountName = "";
+account = Map();
+if(location != null && !location.isEmpty())
+{
+	locationAccountLookup = location.get(fieldLocationAccountLookup);
+	if(locationAccountLookup != null)
+	{
+		accountId = ifnull(locationAccountLookup.get("id"), "");
+		accountName = ifnull(locationAccountLookup.get("name"), "");
+	}
+}
+if(accountId != "")
+{
+	account = zoho.crm.getRecordById(accountModule, accountId);
+}
+
+locationStreet = "";
+locationPostalCode = "";
+if(location != null && !location.isEmpty())
+{
+	locationStreet = ifnull(location.get(fieldLocationStreet), "");
+	locationPostalCode = ifnull(location.get(fieldLocationPostalCode), "");
+}
+
+siteName = "";
+streetAddress = trim(locationStreet);
+if(streetAddress != "")
+{
+	siteName = streetAddress;
+}
+if(locationPostalCode != "")
+{
+	if(siteName != "")
+	{
+		siteName = siteName + " " + locationPostalCode;
+	}
+	else
+	{
+		siteName = locationPostalCode;
+	}
+}
+
+buildingName = siteName;
+if(buildingName == "")
+{
+	buildingName = locationName;
+}
+if(buildingName == "")
+{
+	buildingName = dealName;
+}
+if(buildingName == "")
+{
+	buildingName = accountName;
+}
+if(buildingName == "")
+{
+	buildingName = ifnull(service.get(fieldServiceName), "Wifi Installation");
+}
+
+city = "";
+if(location != null && !location.isEmpty())
+{
+	city = ifnull(location.get(fieldLocationCity), "");
+}
+
+if(siteName == "")
+{
+	siteName = buildingName;
+}
+
+/*
+  Send the Service Location WorkDrive folder to the VM.
+
+  The required WorkDrive layout is:
+    Account root folder
+      Service Location folder
+        Document
+          Controller
+          Passwords
+
+  The VM creates Document, Controller, and Passwords when missing.
+*/
+workdriveFolderId = "";
+if(location != null && !location.isEmpty())
+{
+	workdriveFolderId = ifnull(location.get(fieldLocationFolderId), "");
+}
+
+if(workdriveFolderId == "")
+{
+	updateMap = Map();
+	updateMap.put(fieldWorkflowLastError, "Missing WorkDrive folder on Service Location " + locationId);
+	zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+	info "Stopped. Service Location has no WorkDrive folder.";
+	return;
+}
+
+unitListRaw = ifnull(service.get(fieldUnitList), "");
+generatedSsidListRaw = ifnull(service.get(fieldGeneratedSsidList), "");
+passwordListRaw = ifnull(service.get(fieldPasswordList), "");
+unitListRaw = unitListRaw.replaceAll("(?i)<br\\s*/?>", ",");
+unitListRaw = unitListRaw.replaceAll("(?i)</div>|</p>|</li>|</tr>", ",");
+unitListRaw = unitListRaw.replaceAll("<[^>]*>", "");
+unitListRaw = unitListRaw.replaceAll("&nbsp;", " ");
+unitListRaw = unitListRaw.replaceAll("&amp;", "&");
+unitListRaw = unitListRaw.replaceAll("\\s*,\\s*", ",");
+unitListRaw = unitListRaw.trim();
+
+payload = Map();
+payload.put("building_name", buildingName);
+payload.put("city", city);
+payload.put("crm_record_id", serviceId);
+payload.put("credential_mode", defaultCredentialMode);
+payload.put("workflow_mode", defaultWorkflowMode);
+payload.put("omada_operation", defaultOmadaOperation);
+payload.put("template_name", defaultTemplateName);
+payload.put("workdrive_folder_id", workdriveFolderId);
+payload.put("site_name", siteName);
+payload.put("omada_region", defaultOmadaRegion);
+payload.put("omada_timezone", defaultOmadaTimezone);
+payload.put("omada_scenario", defaultOmadaScenario);
+payload.put("ssid_prefix", defaultSsidPrefix);
+payload.put("ssid_template", defaultSsidTemplate);
+payload.put("ssid_suffix_length", defaultSsidSuffixLength);
+
+/*
+  In this CRM, Units is a multi-line/comma-separated identifier field.
+  Values may be numeric or hybrid, for example:
+    101, 102, 101a
+
+  Send those values as units so the VM always treats them as identifiers,
+  generates final SSID names from the configured template, and generates
+  matching passwords. The VM writes generated SSIDs back to SSIDs and generated
+  passwords back to Passwords.
+*/
+if(unitListRaw != "")
+{
+	payload.put("units", unitListRaw);
+}
+else
+{
+	updateMap = Map();
+	updateMap.put(fieldWorkflowLastError, "Missing Units field values.");
+	zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+	info "Stopped. Missing Units field values.";
+	return;
+}
+
+if(generatedSsidListRaw != "")
+{
+	updateMap = Map();
+	updateMap.put(fieldWorkflowLastError, "SSIDs is already populated. Clear it before generating a new WiFi batch.");
+	zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+	info "Stopped. SSIDs is already populated.";
+	return;
+}
+
+if(passwordListRaw != "")
+{
+	updateMap = Map();
+	updateMap.put(fieldWorkflowLastError, "Passwords is already populated. Clear it before generating a new password batch.");
+	zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+	info "Stopped. Passwords is already populated.";
+	return;
+}
+
+headers = Map();
+headers.put("Content-Type", "application/json");
+headers.put("X-API-Key", workflowApiKey);
+
+try
+{
+	response = invokeurl
+	[
+		url : workflowUrl
+		type : POST
+		body : payload.toString()
+		headers : headers
+	];
+
+	responseText = response.toString();
+	updateMap = Map();
+	jobId = ifnull(response.get("job_id"), "");
+
+	if(jobId != "")
+	{
+		updateMap.put(fieldWorkflowJobId, jobId);
+		updateMap.put(fieldWorkflowLastError, "");
+		zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+		info "Started Opticable workflow job: " + jobId;
+		return;
+	}
+	else
+	{
+		updateMap.put(fieldWorkflowLastError, "Workflow API did not return job_id. Response: " + responseText);
+		zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+		info "Workflow API returned no job_id: " + responseText;
+		return;
+	}
+}
+catch(e)
+{
+	updateMap = Map();
+	updateMap.put(fieldWorkflowLastError, e.toString());
+	zoho.crm.updateRecord(serviceModule, serviceId, updateMap);
+	info "Workflow API call failed: " + e.toString();
+	return;
+}

@@ -62,6 +62,7 @@ class CrmSettings:
     api_base_url: str
     module_api_name: str
     primary_password_field: str
+    generated_ssids_field: str
     overflow_password_field: str
     primary_password_limit: int
 
@@ -152,9 +153,10 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
         crm=CrmSettings(
             enabled=bool(crm.get("enabled", True)),
             api_base_url=str(crm.get("api_base_url", "https://www.zohoapis.com/crm/v7")).rstrip("/"),
-            module_api_name=str(crm.get("module_api_name", "Fiches_Techniques")),
-            primary_password_field=str(crm.get("primary_password_field", "Mots_de_passes")),
-            overflow_password_field=str(crm.get("overflow_password_field", "MDP")),
+            module_api_name=str(crm.get("module_api_name", "Services")),
+            primary_password_field=str(crm.get("primary_password_field", "Passwords")),
+            generated_ssids_field=str(crm.get("generated_ssids_field", "SSIDs")),
+            overflow_password_field=str(crm.get("overflow_password_field", "")),
             primary_password_limit=int(crm.get("primary_password_limit", 150)),
         ),
         workdrive=WorkDriveSettings(
@@ -162,7 +164,7 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             api_base_url=str(workdrive["api_base_url"]).rstrip("/"),
             accounts_base_url=str(workdrive["accounts_base_url"]).rstrip("/"),
             parent_folder_id=workdrive.get("parent_folder_id"),
-            target_folder_name=str(workdrive.get("target_folder_name", "Document locataire")).strip(),
+            target_folder_name=str(workdrive.get("target_folder_name", "Document/Passwords")).strip(),
             overwrite_existing_files=bool(workdrive.get("overwrite_existing_files", True)),
             cleanup_local_after_upload=bool(workdrive["cleanup_local_after_upload"]),
             upload_individual_pdfs=bool(workdrive["upload_individual_pdfs"]),

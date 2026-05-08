@@ -19,6 +19,7 @@ from .common import (
     draw_logo,
     draw_paragraph,
     draw_qr,
+    fit_font_size,
 )
 
 
@@ -97,8 +98,11 @@ def draw_opticable_template_01(
     instruction_height = 236
     support_height = 122
     support_qr_card = 100
+    location_label = building_name
+    if record.unit_label:
+        location_label = f"{building_name} - {record.unit_label}"
 
-    canvas.setTitle(f"{building_name} - {record.ssid}")
+    canvas.setTitle(f"{location_label} - {record.ssid}")
     canvas.setAuthor(settings.branding.brand_name)
     canvas.setFillColor(theme["page_background"])
     canvas.rect(0, 0, page_width, page_height, fill=1, stroke=0)
@@ -108,7 +112,7 @@ def draw_opticable_template_01(
     header_qr_x = page_width - margin - header_qr_width
     canvas.setFillColor(theme["header_rule"])
     canvas.rect(margin, header_bottom + 10, header_qr_x - margin - header_qr_gap, 6, fill=1, stroke=0)
-    draw_logo(canvas, settings.branding.logo_path, margin, header_bottom + 28, 220, 40)
+    draw_logo(canvas, settings.branding.logo_path, margin, header_bottom + 32, 220, 34)
 
     draw_card(
         canvas,
@@ -124,8 +128,9 @@ def draw_opticable_template_01(
 
     info_y = header_bottom - 110
     canvas.setFillColor(theme["meta_text"])
-    canvas.setFont(fonts["bold"], 11.2)
-    canvas.drawCentredString(page_width / 2, info_y + 92, building_name)
+    location_font_size = fit_font_size(location_label, fonts["bold"], panel_width - 24, 11, 8)
+    canvas.setFont(fonts["bold"], location_font_size)
+    canvas.drawCentredString(page_width / 2, info_y + 92, location_label)
     draw_label_value_panel(
         canvas,
         margin,

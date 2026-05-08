@@ -1,7 +1,7 @@
 {
   "branding": {
     "brand_name": "Opticable",
-    "logo_path": "assets/wifi_pdf/opticable-logo.png",
+    "logo_path": "assets/wifi_pdf/opticable-client-logo.png",
     "support_email": "support@opticable.ca",
     "support_phone": "514-316-7236 #2",
     "primary_color": "#2E8A67",
@@ -35,9 +35,10 @@
   "crm": {
     "enabled": true,
     "api_base_url": "https://www.zohoapis.com/crm/v7",
-    "module_api_name": "Fiches_Techniques",
-    "primary_password_field": "Mots_de_passes",
-    "overflow_password_field": "MDP",
+    "module_api_name": "Services",
+    "primary_password_field": "Passwords",
+    "generated_ssids_field": "SSIDs",
+    "overflow_password_field": "",
     "primary_password_limit": 150
   },
   "workdrive": {
@@ -45,7 +46,7 @@
     "api_base_url": "https://www.zohoapis.com/workdrive/api/v1",
     "accounts_base_url": "https://accounts.zoho.com/oauth/v2/token",
     "parent_folder_id": null,
-    "target_folder_name": "Document locataire",
+    "target_folder_name": "Document/Passwords",
     "overwrite_existing_files": true,
     "cleanup_local_after_upload": true,
     "upload_individual_pdfs": true,

@@ -3,7 +3,7 @@ import type { Frame, Locator, Page } from "playwright";
 import type { OmadaLan, OmadaMutationMode, OmadaPlan, OmadaSite, OmadaSsid, OmadaWlanGroup } from "../config/schema";
 import type { RunReporter } from "../runtime/report";
 import { clickFirstVisible, escapeRegex, fillFirstVisible, findFirstVisible, type QueryRoot } from "./locators";
-import { recoverCloudLogin } from "./session";
+import { isCloudLoginPage, recoverCloudLogin } from "./session";
 
 interface ControllerApiEnvelope<T> {
   errorCode: number;
@@ -83,8 +83,10 @@ export class OmadaPortal {
 
   public async ensureOrganizationSelected(organizationName: string): Promise<void> {
     await this.page.goto(`${this.normalizedBaseUrl()}#orgManager`, { waitUntil: "domcontentloaded" });
+    await this.waitForPortalLanding();
     await this.acceptCookiesIfVisible();
     await this.ensureStillAuthenticated();
+    await this.waitForPortalLanding(60000);
 
     const existingFrame = this.getAppFrame();
     if (existingFrame?.url().includes("#dashboardGlobal")) {
@@ -134,6 +136,11 @@ export class OmadaPortal {
     const hydratedFrame = this.getAppFrame();
     if (hydratedFrame) {
       return;
+    }
+
+    const bodyText = (await this.page.locator("body").innerText().catch(() => "")).trim();
+    if (bodyText.length === 0) {
+      throw new Error("Omada portal did not finish loading before organization selection.");
     }
 
     if (!this.page.url().includes("id.tplinkcloud.com")) {
@@ -925,8 +932,34 @@ export class OmadaPortal {
     await this.page.waitForTimeout(1200);
   }
 
+  private async waitForPortalLanding(timeoutMs = 25000): Promise<void> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      if (await isCloudLoginPage(this.page)) {
+        return;
+      }
+
+      if (this.getAppFrame()) {
+        return;
+      }
+
+      const orgRowCount = await this.page.locator("tr[data-row-key]").count().catch(() => 0);
+      if (orgRowCount > 0) {
+        return;
+      }
+
+      const bodyText = (await this.page.locator("body").innerText().catch(() => "")).trim();
+      if (bodyText.length > 0 && /sign in|organization|search name/i.test(bodyText)) {
+        return;
+      }
+
+      await this.page.waitForTimeout(500);
+    }
+  }
+
   private async ensureStillAuthenticated(): Promise<void> {
-    if (this.page.url().includes("id.tplinkcloud.com")) {
+    if (this.page.url().includes("id.tplinkcloud.com") || await isCloudLoginPage(this.page)) {
       this.reporter.log("warning", "Omada session expired. Attempting automatic cloud re-login.");
       const recovered = await recoverCloudLogin(this.page, this.controller).catch((error) => {
         this.reporter.log("error", `Automatic cloud re-login failed: ${String(error)}`);

@@ -3,7 +3,7 @@
 version: 1
 
 controller:
-  organizationName: Opti-plex
+  organizationName: Opticable
   baseUrl: https://use1-omada-cloud.tplinkcloud.com/
   browserChannel: chromium
   headless: true
