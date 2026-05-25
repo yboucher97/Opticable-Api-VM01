@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -442,7 +443,11 @@ def _run_job(job_id: str, raw_payload: dict, batch) -> None:
         logger.info("Workflow job %s completed", job_id)
 
 
-def _upload_omada_live_site_artifacts(workdrive_folder_id: str, omada_job: dict[str, Any]) -> list[dict[str, Any]]:
+def _upload_omada_live_site_artifacts(
+    workdrive_folder_id: str,
+    omada_job: dict[str, Any],
+    run_folder_name: str,
+) -> list[dict[str, Any]]:
     report = omada_job.get("report")
     if not isinstance(report, dict):
         return []
@@ -451,7 +456,7 @@ def _upload_omada_live_site_artifacts(workdrive_folder_id: str, omada_job: dict[
     if not isinstance(artifacts, list):
         return []
 
-    workdrive_client = WorkflowWorkDriveClient(settings.zoho_oauth, logger)
+    workdrive_client = WorkflowWorkDriveClient(settings.zoho_oauth, logger, run_folder_name=run_folder_name)
     uploads: list[dict[str, Any]] = []
 
     for artifact in artifacts:
@@ -479,7 +484,11 @@ def _watch_omada_workdrive_job(job_id: str, workdrive_folder_id: str) -> None:
             logger.info("Omada WorkDrive job %s finished without success. Skipping live-site upload.", job_id)
             return
 
-        uploads = _upload_omada_live_site_artifacts(workdrive_folder_id, omada_job)
+        uploads = _upload_omada_live_site_artifacts(
+            workdrive_folder_id,
+            omada_job,
+            datetime.now().strftime("%Y-%m-%d-%H-%M"),
+        )
         if uploads:
             logger.info("Omada WorkDrive job %s uploaded %d live-site artifact(s).", job_id, len(uploads))
     except Exception:

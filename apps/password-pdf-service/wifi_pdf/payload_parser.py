@@ -16,7 +16,18 @@ from .exceptions import PayloadValidationError
 BUILDING_NAME_KEYS = ("building_name", "Building_Name", "Deal_Name", "deal_name", "name", "Name")
 CITY_KEYS = ("city", "City", "Ville_de_l_immeuble", "ville_de_l_immeuble")
 CRM_RECORD_ID_KEYS = ("crm_record_id", "CRM_Record_Id", "record_id", "Record_Id", "Fiche_Id", "fiche_id")
-TEMPLATE_NAME_KEYS = ("template_name", "Template_Name")
+TEMPLATE_NAME_KEYS = ("template_name", "Template_Name", "Template")
+TEMPLATE_NAME_ALIASES = {
+    "opticable": "Opticable Template Basic 01",
+    "opticable_basic01": "Opticable Template Basic 01",
+    "opticable_template_01": "Opticable Template Basic 01",
+    "opticable_template_basic_01": "Opticable Template Basic 01",
+    "corteck": "Corteck Template Basic 01",
+    "corteck_basic01": "Corteck Template Basic 01",
+    "corteck_template_basic_01": "Corteck Template Basic 01",
+    "cotreck": "Corteck Template Basic 01",
+    "cotreck_basic01": "Corteck Template Basic 01",
+}
 WORKDRIVE_KEYS = (
     "workdrive_folder_id",
     "Workdrive_folder_id",
@@ -28,7 +39,7 @@ WORKDRIVE_KEYS = (
 SSID_PREFIX_KEYS = ("ssid_prefix", "SSID_Prefix")
 UNITS_KEYS = ("units", "Units", "unit_s", "Unit_s", "unit_list")
 SSIDS_KEYS = ("ssids", "SSIDs", "ssid_list", "SSID_List", "SSID_s")
-PASSWORDS_KEYS = ("passwords", "Passwords", "password_list", "Mots_de_passes", "PASSWORD_List")
+PASSWORDS_KEYS = ("passwords", "Passwords", "password_list", "Mots_de_passes", "PASSWORD_List", "MDP")
 UNIT_LABEL_KEYS = ("unit_labels", "Unit_Labels", "unit_label_list")
 AUTH_TYPE_KEYS = ("auth_type", "AUTH_TYPE")
 HIDDEN_KEYS = ("hidden", "Hidden")
@@ -68,6 +79,12 @@ def _clean_scalar(value: Any) -> str | None:
         return None
     cleaned = normalize_rich_text(text).strip()
     return cleaned or None
+
+
+def normalize_template_name(value: Any) -> str:
+    cleaned = _clean_scalar(value) or "Opticable Template Basic 01"
+    alias_key = re.sub(r"[\s-]+", "_", cleaned.strip().lower())
+    return TEMPLATE_NAME_ALIASES.get(alias_key, cleaned)
 
 
 def normalize_rich_text(value: str) -> str:
@@ -161,23 +178,26 @@ def parse_bool_flag(value: Any) -> bool | None:
 
 def parse_password_lists(mapping: dict[str, Any]) -> list[str]:
     combined: list[str] = []
+    seen_keys: set[str] = set()
     for index in range(1, 10):
-        part_value = _get_password_part(mapping, index)
-        if part_value is None:
-            continue
-        combined.extend(parse_string_list(part_value, f"passwords_{index}"))
+        for key, part_value in _get_password_parts(mapping, index):
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            combined.extend(parse_string_list(part_value, f"passwords_{index}"))
     return combined
 
 
-def _get_password_part(mapping: dict[str, Any], index: int) -> Any:
+def _get_password_parts(mapping: dict[str, Any], index: int) -> list[tuple[str, Any]]:
     if index == 1:
-        return _get_first(mapping, PASSWORDS_KEYS)
+        return [(key, mapping[key]) for key in PASSWORDS_KEYS if key in mapping]
 
-    part_candidates: list[str] = []
+    parts: list[tuple[str, Any]] = []
     for key in PASSWORDS_KEYS:
-        part_candidates.append(f"{key}_{index}")
-        part_candidates.append(f"{key}{index}")
-    return _get_first(mapping, tuple(part_candidates))
+        for candidate in (f"{key}_{index}", f"{key}{index}"):
+            if candidate in mapping:
+                parts.append((candidate, mapping[candidate]))
+    return parts
 
 
 def normalize_ssid_prefix(mapping: dict[str, Any]) -> str:
@@ -314,11 +334,35 @@ def normalize_payload(raw_payload: Any) -> dict[str, Any]:
     building_name = _clean_scalar(_get_first(payload, BUILDING_NAME_KEYS))
     city = _clean_scalar(_get_first(payload, CITY_KEYS))
     crm_record_id = _clean_scalar(_get_first(payload, CRM_RECORD_ID_KEYS))
-    template_name = _clean_scalar(_get_first(payload, TEMPLATE_NAME_KEYS)) or "Opticable_Template_01"
+    template_name = normalize_template_name(_get_first(payload, TEMPLATE_NAME_KEYS))
     workdrive_folder_id = extract_workdrive_folder_id(_get_first(payload, WORKDRIVE_KEYS))
 
     if "records" in payload:
         normalized = dict(payload)
+        allowed_batch_keys = {
+            "building_name",
+            "city",
+            "crm_record_id",
+            "passwords_generated",
+            "workdrive_folder_id",
+            "workdrive_run_stamp",
+            "template_name",
+            "upload_individual_pdfs",
+            "upload_merged_pdf",
+            "upload_txt_export",
+            "upload_zip_export",
+            "upload_ya_export",
+            "records",
+        }
+        for key in (
+            *BUILDING_NAME_KEYS,
+            *CITY_KEYS,
+            *CRM_RECORD_ID_KEYS,
+            *TEMPLATE_NAME_KEYS,
+            *WORKDRIVE_KEYS,
+        ):
+            if key not in allowed_batch_keys:
+                normalized.pop(key, None)
         if building_name is not None:
             normalized["building_name"] = building_name
         if workdrive_folder_id is not None:
@@ -369,6 +413,16 @@ def normalize_payload(raw_payload: Any) -> dict[str, Any]:
         "template_name": template_name,
         "records": records,
     }
+    for key in (
+        "upload_individual_pdfs",
+        "upload_merged_pdf",
+        "upload_txt_export",
+        "upload_zip_export",
+        "upload_ya_export",
+        "workdrive_run_stamp",
+    ):
+        if key in payload:
+            normalized[key] = payload[key]
     if workdrive_folder_id is not None:
         normalized["workdrive_folder_id"] = workdrive_folder_id
     return normalized

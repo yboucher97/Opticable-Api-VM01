@@ -11,7 +11,8 @@ from reportlab.pdfgen import canvas
 from .config import AppSettings
 from .exceptions import RenderingError
 from .models import WifiRecord
-from .templates import draw_opticable_template_01
+from .templates import draw_cotreck_basic01, draw_opticable_template_01
+from .utils import resolve_repo_path
 
 
 PAGE_SIZE_MAP = {
@@ -19,7 +20,15 @@ PAGE_SIZE_MAP = {
     "LETTER": LETTER,
 }
 
-ACTIVE_TEMPLATE_NAME = "Opticable_Template_01"
+ACTIVE_TEMPLATE_NAME = "Opticable Template Basic 01"
+TEMPLATE_RENDERERS = {
+    "Opticable Template Basic 01": draw_opticable_template_01,
+    "Corteck Template Basic 01": draw_cotreck_basic01,
+}
+COTRECK_TEMPLATE_FONTS = {
+    "regular": ("CotreckOpenSans", "assets/wifi_pdf/corteck/OpenSans-Regular.ttf"),
+    "bold": ("CotreckOpenSans-Bold", "assets/wifi_pdf/corteck/OpenSans-Bold.ttf"),
+}
 
 SYSTEM_FONT_PATHS = {
     "regular": [
@@ -78,6 +87,17 @@ class PdfRenderer:
 
         return {"regular": regular_name, "bold": bold_name}
 
+    def _fonts_for_template(self, template_name: str) -> dict[str, str]:
+        if template_name != "Corteck Template Basic 01":
+            return self.fonts
+
+        template_fonts: dict[str, str] = {}
+        for kind, (internal_name, relative_path) in COTRECK_TEMPLATE_FONTS.items():
+            if not self._register_font(internal_name, resolve_repo_path(relative_path)):
+                return self.fonts
+            template_fonts[kind] = internal_name
+        return template_fonts
+
     def render(
         self,
         record: WifiRecord,
@@ -90,18 +110,20 @@ class PdfRenderer:
     ) -> Path:
         page_size = PAGE_SIZE_MAP.get(self.settings.layout.page_size.upper(), LETTER)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        if template_name != ACTIVE_TEMPLATE_NAME:
-            raise RenderingError(f"Unknown template_name '{template_name}'. Expected '{ACTIVE_TEMPLATE_NAME}'.")
+        template_renderer = TEMPLATE_RENDERERS.get(template_name)
+        if template_renderer is None:
+            expected = "', '".join(TEMPLATE_RENDERERS)
+            raise RenderingError(f"Unknown template_name '{template_name}'. Expected one of: '{expected}'.")
 
         try:
             pdf = canvas.Canvas(str(output_path), pagesize=page_size)
-            draw_opticable_template_01(
+            template_renderer(
                 pdf,
                 record=record,
                 building_name=building_name,
                 qr_path=qr_path,
                 settings=self.settings,
-                fonts=self.fonts,
+                fonts=self._fonts_for_template(template_name),
                 sheet_number=sheet_number,
                 sheet_total=sheet_total,
             )

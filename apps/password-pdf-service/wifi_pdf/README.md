@@ -42,7 +42,7 @@ Canonical request shape:
 {
   "building_name": "101-103 Rue Yanick",
   "workdrive_folder_id": "optional-workdrive-folder-id",
-  "template_name": "Opticable_Template_01",
+  "template_name": "Opticable Template Basic 01",
   "records": [
     {
       "ssid": "app101_jw",
@@ -59,7 +59,7 @@ Canonical request shape:
 Input notes:
 
 - the recommended production schema is the top-level object above because it carries building metadata and the per-batch WorkDrive folder id
-- `template_name` is `Opticable_Template_01`
+- `template_name` is `Opticable Template Basic 01` by default; Zoho may send `Template` as `Opticable Template Basic 01` or `Corteck Template Basic 01`
 - the API also accepts a thin CRM-style payload and normalizes it server-side
 
 Thin CRM-style payload accepted by the VM:
@@ -259,7 +259,7 @@ python -m wifi_pdf.cli --input input/wifi_pdf/example_crm_payload.json --print-j
 Force the Opticable layout from the CLI:
 
 ```bash
-python -m wifi_pdf.cli --input input/wifi_pdf/example_records.json --template-name Opticable_Template_01 --print-json
+python -m wifi_pdf.cli --input input/wifi_pdf/example_records.json --template-name "Opticable Template Basic 01" --print-json
 ```
 
 Export the schema:

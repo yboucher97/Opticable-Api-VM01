@@ -20,7 +20,15 @@ def main() -> None:
     parser.add_argument("--log-level", default="INFO", help="Python logging level.")
     parser.add_argument(
         "--template-name",
-        choices=["Opticable_Template_01"],
+        choices=[
+            "Opticable Template Basic 01",
+            "Corteck Template Basic 01",
+            "Opticable_Basic01",
+            "Cotreck_Basic01",
+            "Opticable",
+            "Corteck",
+            "Opticable_Template_01",
+        ],
         default=None,
         help="Override the template name from the input payload.",
     )

@@ -137,8 +137,11 @@
       "title": "Workdrive Folder Id"
     },
     "template_name": {
-      "const": "Opticable_Template_01",
-      "default": "Opticable_Template_01",
+      "default": "Opticable Template Basic 01",
+      "enum": [
+        "Opticable Template Basic 01",
+        "Corteck Template Basic 01"
+      ],
       "title": "Template Name",
       "type": "string"
     },

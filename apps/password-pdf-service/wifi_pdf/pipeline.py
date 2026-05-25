@@ -148,17 +148,20 @@ class WifiPdfPipeline:
 
         if self.settings.workdrive.enabled:
             client = ZohoWorkDriveClient(self.settings.workdrive, self.logger)
-            folder_id = client.resolve_upload_folder_id(batch.workdrive_folder_id)
+            folder_id = client.resolve_upload_folder_id(
+                batch.workdrive_folder_id,
+                run_folder_name=batch.workdrive_run_stamp,
+            )
             upload_candidates: list[Path] = []
-            if self.settings.workdrive.upload_individual_pdfs:
+            if self._should_upload(batch.upload_individual_pdfs, self.settings.workdrive.upload_individual_pdfs):
                 upload_candidates.extend(pdf_paths)
-            if self.settings.workdrive.upload_merged_pdf:
+            if self._should_upload(batch.upload_merged_pdf, self.settings.workdrive.upload_merged_pdf):
                 upload_candidates.append(merged_pdf_path)
-            if self.settings.workdrive.upload_txt_export:
+            if self._should_upload(batch.upload_txt_export, self.settings.workdrive.upload_txt_export):
                 upload_candidates.append(txt_export_path)
-            if self.settings.workdrive.upload_zip_export:
+            if self._should_upload(batch.upload_zip_export, self.settings.workdrive.upload_zip_export):
                 upload_candidates.append(zip_export_path)
-            if self.settings.workdrive.upload_ya_export:
+            if self._should_upload(batch.upload_ya_export, self.settings.workdrive.upload_ya_export):
                 upload_candidates.append(ya_export_path)
 
             for path in upload_candidates:
@@ -203,13 +206,21 @@ class WifiPdfPipeline:
             uploads=uploads,
         )
 
+    def _should_upload(self, request_value: bool | None, configured_value: bool) -> bool:
+        return configured_value if request_value is None else request_value
+
     def _write_txt_export(self, batch_dir: Path, batch: WifiBatchRequest) -> Path:
         safe_building_name = self._safe_building_label(batch.building_name)
         txt_path = batch_dir / f"Mot de passe {safe_building_name}.txt"
-        lines = ["Logement\tMot de passe"]
+        ssid_width = max(len("SSID"), *(len(record.ssid) for record in batch.records))
+        password_width = max(len("Password"), *(len(record.password or "") for record in batch.records))
+        lines = [
+            f"{'SSID'.ljust(ssid_width)}    {'Password'.ljust(password_width)}",
+            f"{'-' * ssid_width}    {'-' * password_width}",
+        ]
         for record in batch.records:
             password = record.password or ""
-            lines.append(f"{record.ssid}\t{password}")
+            lines.append(f"{record.ssid.ljust(ssid_width)}    {password}")
         txt_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         self.logger.info("Generated TXT export for building '%s'", batch.building_name)
         return txt_path

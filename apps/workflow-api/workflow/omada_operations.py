@@ -239,6 +239,10 @@ def _parse_txt_records(content: str, file_name: str) -> list[WorkflowRecord]:
             continue
         if "network" in lower and "password" in lower:
             continue
+        if "ssid" in lower and "password" in lower:
+            continue
+        if set(line) <= {"-", " ", "\t"}:
+            continue
 
         ssid, password = _split_txt_line(line, file_name)
         records.append(

@@ -5,11 +5,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .exceptions import PayloadValidationError
-from .payload_parser import normalize_payload
+from .payload_parser import normalize_payload, normalize_template_name
 
 
 AuthType = Literal["WPA", "WEP", "nopass"]
-TemplateName = Literal["Opticable_Template_01"]
+TemplateName = Literal["Opticable Template Basic 01", "Corteck Template Basic 01"]
 
 
 class WifiRecord(BaseModel):
@@ -68,7 +68,13 @@ class WifiBatchRequest(BaseModel):
     crm_record_id: str | None = None
     passwords_generated: bool = False
     workdrive_folder_id: str | None = None
-    template_name: TemplateName = "Opticable_Template_01"
+    workdrive_run_stamp: str | None = None
+    template_name: TemplateName = "Opticable Template Basic 01"
+    upload_individual_pdfs: bool | None = None
+    upload_merged_pdf: bool | None = None
+    upload_txt_export: bool | None = None
+    upload_zip_export: bool | None = None
+    upload_ya_export: bool | None = None
     records: list[WifiRecord] = Field(min_length=1)
 
     @field_validator("building_name")
@@ -94,6 +100,19 @@ class WifiBatchRequest(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("workdrive_run_stamp")
+    @classmethod
+    def validate_workdrive_run_stamp(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("template_name", mode="before")
+    @classmethod
+    def validate_template_name(cls, value: str | None) -> str:
+        return normalize_template_name(value)
 
 
 def parse_payload(raw_payload: Any) -> WifiBatchRequest:

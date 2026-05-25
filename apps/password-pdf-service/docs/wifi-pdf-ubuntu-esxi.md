@@ -267,7 +267,7 @@ Recommended payload:
 {
   "building_name": "101-103 Rue Yanick",
   "workdrive_folder_id": "abc123workdrivefolderid",
-  "template_name": "Opticable_Template_01",
+  "template_name": "Opticable Template Basic 01",
   "records": [
     {
       "ssid": "app101_jw",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,24 +33,35 @@ class ZohoWorkDriveClient:
             )
         return folder_id
 
-    def resolve_upload_folder_id(self, request_folder_id: str | None) -> str:
+    def resolve_upload_folder_id(self, request_folder_id: str | None, run_folder_name: str | None = None) -> str:
         parent_folder_id = self.resolve_folder_id(request_folder_id)
         target_folder_name = self.settings.target_folder_name.strip()
         if not target_folder_name:
             return parent_folder_id
+        run_stamp = self._workdrive_run_stamp(run_folder_name)
 
         timeout = httpx.Timeout(60.0, connect=20.0)
         with httpx.Client(timeout=timeout) as client:
             headers = self._get_auth_headers(client)
-            child_folder_id = self._find_or_create_folder_path_id(client, headers, parent_folder_id, target_folder_name)
+            child_folder_id = self._prepare_rotated_upload_folder_id(
+                client,
+                headers,
+                parent_folder_id,
+                target_folder_name,
+                run_stamp,
+            )
 
         self.logger.info(
-            "Resolved WorkDrive upload folder path '%s' inside parent %s -> %s",
-            target_folder_name,
+            "Resolved WorkDrive upload folder path '%s %s' inside parent %s -> %s",
+            self._target_folder_parts(target_folder_name)[-1],
+            run_stamp,
             parent_folder_id,
             child_folder_id,
         )
         return child_folder_id
+
+    def _workdrive_run_stamp(self, value: str | None = None) -> str:
+        return (value or "").strip() or datetime.now().strftime("%Y-%m-%d-%H-%M")
 
     def _get_auth_headers(self, client: httpx.Client) -> dict[str, str]:
         access_token = self._get_access_token(client)
@@ -233,6 +245,54 @@ class ZohoWorkDriveClient:
 
         return None
 
+    def _list_child_folders(
+        self,
+        client: httpx.Client,
+        headers: dict[str, str],
+        parent_folder_id: str,
+    ) -> list[dict[str, str]]:
+        offset = 0
+        limit = 50
+        folders: list[dict[str, str]] = []
+
+        while True:
+            response = client.get(
+                f"{self.settings.api_base_url}/files/{parent_folder_id}/files",
+                headers=headers,
+                params={"page[limit]": limit, "page[offset]": offset},
+            )
+            if response.status_code >= 400:
+                raise WorkDriveError(
+                    f"WorkDrive folder lookup failed for parent '{parent_folder_id}' with status "
+                    f"{response.status_code}: {response.text}"
+                )
+
+            payload = response.json()
+            data = payload.get("data")
+            if not isinstance(data, list):
+                raise WorkDriveError(
+                    f"Unexpected WorkDrive folder lookup response for parent '{parent_folder_id}': {payload}"
+                )
+
+            for entry in data:
+                if not isinstance(entry, dict):
+                    continue
+                attributes = entry.get("attributes")
+                if not isinstance(attributes, dict):
+                    continue
+                if str(attributes.get("type", "")).lower() != "folder":
+                    continue
+                folder_id = entry.get("id")
+                name = str(attributes.get("name", "")).strip()
+                if folder_id and name:
+                    folders.append({"id": str(folder_id), "name": name})
+
+            if len(data) < limit:
+                break
+            offset += limit
+
+        return folders
+
     def _find_or_create_folder_path_id(
         self,
         client: httpx.Client,
@@ -250,8 +310,87 @@ class ZohoWorkDriveClient:
             )
         return folder_id
 
+    def _prepare_rotated_upload_folder_id(
+        self,
+        client: httpx.Client,
+        headers: dict[str, str],
+        parent_folder_id: str,
+        target_folder_path: str,
+        run_stamp: str,
+    ) -> str:
+        target_parts = self._target_folder_parts(target_folder_path)
+        if not target_parts:
+            return parent_folder_id
+
+        container_folder_id = parent_folder_id
+        if len(target_parts) > 1:
+            container_folder_id = self._find_or_create_folder_path_id(
+                client,
+                headers,
+                parent_folder_id,
+                "/".join(target_parts[:-1]),
+            )
+
+        base_folder_name = target_parts[-1]
+        archive_folder_id = self._find_or_create_child_folder_id(
+            client=client,
+            headers=headers,
+            parent_folder_id=container_folder_id,
+            target_folder_name="Archive",
+        )
+        current_folder_name = f"{base_folder_name} {run_stamp}"
+        stale_folder_ids = [
+            folder["id"]
+            for folder in self._list_child_folders(client, headers, container_folder_id)
+            if folder["id"] != archive_folder_id
+            and self._is_rotated_target_folder(folder["name"], base_folder_name)
+        ]
+        if stale_folder_ids:
+            self._move_items_to_folder(client, headers, stale_folder_ids, archive_folder_id)
+
+        return self._find_or_create_child_folder_id(
+            client=client,
+            headers=headers,
+            parent_folder_id=container_folder_id,
+            target_folder_name=current_folder_name,
+        )
+
     def _target_folder_parts(self, target_folder_path: str) -> list[str]:
         return [part.strip() for part in target_folder_path.split("/") if part.strip()]
+
+    def _is_rotated_target_folder(self, folder_name: str, base_folder_name: str) -> bool:
+        normalized = folder_name.strip().casefold()
+        base = base_folder_name.strip().casefold()
+        return normalized == base or normalized.startswith(f"{base} ")
+
+    def _move_items_to_folder(
+        self,
+        client: httpx.Client,
+        headers: dict[str, str],
+        item_ids: list[str],
+        destination_folder_id: str,
+    ) -> None:
+        response = client.patch(
+            f"{self.settings.api_base_url}/files",
+            headers={**headers, "Content-Type": "application/vnd.api+json"},
+            json={
+                "data": [
+                    {
+                        "type": "files",
+                        "id": item_id,
+                        "attributes": {"parent_id": destination_folder_id},
+                    }
+                    for item_id in item_ids
+                ]
+            },
+        )
+        if response.status_code >= 400:
+            raise WorkDriveError(
+                f"WorkDrive archive move failed for {len(item_ids)} item(s) into '{destination_folder_id}' "
+                f"with status {response.status_code}: {response.text}"
+            )
+
+        self.logger.info("Moved %d WorkDrive folder(s) into Archive folder %s", len(item_ids), destination_folder_id)
 
     def _create_child_folder_id(
         self,

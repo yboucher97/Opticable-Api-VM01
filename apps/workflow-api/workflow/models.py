@@ -24,7 +24,7 @@ WORKDRIVE_KEYS = (
     "workdrive_url",
 )
 SSIDS_KEYS = ("ssids", "SSIDs", "ssid_list", "SSID_List", "SSID_s")
-PASSWORDS_KEYS = ("passwords", "Passwords", "password_list", "Mots_de_passes", "PASSWORD_List")
+PASSWORDS_KEYS = ("passwords", "Passwords", "password_list", "Mots_de_passes", "PASSWORD_List", "MDP")
 UNITS_KEYS = ("units", "Units", "unit_s", "Unit_s", "unit_list", "ssid_identifiers", "SSID_Identifiers")
 UNIT_LABEL_KEYS = ("unit_labels", "Unit_Labels", "unit_label_list")
 VLAN_KEYS = ("vlans", "VLANs", "vlan_ids", "VLAN_List", "VLAN_s")
@@ -41,6 +41,12 @@ PASSWORD_SPECIALS_KEYS = ("password_specials", "PASSWORD_SPECIALS")
 WORKDRIVE_QUERY_KEYS = ("id", "folder_id", "resource_id", "parent_id")
 WORKFLOW_MODE_KEYS = ("workflow_mode", "Workflow_Mode")
 CREDENTIAL_MODE_KEYS = ("credential_mode", "Credential_Mode")
+UPLOAD_OMADA_PLAN_KEYS = ("upload_omada_plan", "Upload_Omada_Plan")
+UPLOAD_INDIVIDUAL_PDFS_KEYS = ("upload_individual_pdfs", "Upload_Individual_PDFs")
+UPLOAD_MERGED_PDF_KEYS = ("upload_merged_pdf", "Upload_Merged_PDF")
+UPLOAD_TXT_EXPORT_KEYS = ("upload_txt_export", "Upload_TXT_Export")
+UPLOAD_ZIP_EXPORT_KEYS = ("upload_zip_export", "Upload_ZIP_Export")
+UPLOAD_YA_EXPORT_KEYS = ("upload_ya_export", "Upload_YA_Export")
 SAFE_PASSWORD_LETTERS = "abcdefghjkmnopqrstuvwxyz"
 
 CredentialMode = Literal["generated", "predefined"]
@@ -108,6 +114,12 @@ class WorkflowBatchRequest(BaseModel):
     omada_timezone: str | None = None
     omada_scenario: str | None = None
     omada_operation: OmadaOperation = "ensure"
+    upload_omada_plan: bool = False
+    upload_individual_pdfs: bool | None = None
+    upload_merged_pdf: bool | None = None
+    upload_txt_export: bool | None = None
+    upload_zip_export: bool | None = None
+    upload_ya_export: bool | None = None
     records: list[WorkflowRecord] = Field(min_length=1)
 
     @field_validator("building_name")
@@ -158,11 +170,18 @@ class WorkflowBatchRequest(BaseModel):
         self.records = updated_records
         return self
 
-    def to_pdf_payload(self) -> dict[str, Any]:
+    def to_pdf_payload(self, workdrive_run_stamp: str | None = None) -> dict[str, Any]:
+        includes_omada = self.workflow_mode in {"pdf_and_site", "site_only"}
         payload: dict[str, Any] = {
             "building_name": self.building_name,
             "template_name": self.template_name,
             "passwords_generated": self.passwords_generated,
+            "upload_individual_pdfs": True,
+            "upload_merged_pdf": True,
+            "upload_txt_export": True,
+            "upload_zip_export": True,
+            "upload_ya_export": includes_omada,
+            "workdrive_run_stamp": workdrive_run_stamp,
             "records": [
                 {
                     "SSID": record.ssid,
@@ -201,6 +220,35 @@ def _parse_bool_flag(value: Any) -> bool | None:
     if normalized in {"false", "0", "no", "n", "off"}:
         return False
     raise ValueError(f"Boolean flag value '{text}' is not recognized.")
+
+
+def _parse_bool_with_default(value: Any, default: bool) -> bool:
+    parsed = _parse_bool_flag(value)
+    return default if parsed is None else parsed
+
+
+def _get_password_parts(payload: dict[str, Any], index: int) -> list[tuple[str, Any]]:
+    if index == 1:
+        return [(key, payload[key]) for key in PASSWORDS_KEYS if key in payload]
+
+    parts: list[tuple[str, Any]] = []
+    for key in PASSWORDS_KEYS:
+        for candidate in (f"{key}_{index}", f"{key}{index}"):
+            if candidate in payload:
+                parts.append((candidate, payload[candidate]))
+    return parts
+
+
+def _parse_password_lists(payload: dict[str, Any]) -> list[str]:
+    passwords: list[str] = []
+    seen_keys: set[str] = set()
+    for index in range(1, 10):
+        for key, part in _get_password_parts(payload, index):
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            passwords.extend(parse_string_list(part, f"passwords_{index}"))
+    return passwords
 
 
 def _parse_workflow_mode(value: Any) -> WorkflowMode:
@@ -455,6 +503,14 @@ def parse_payload(raw_payload: Any, settings: AppSettings) -> WorkflowBatchReque
     default_hidden = _parse_bool_flag(get_first(payload, HIDDEN_KEYS)) or False
     workflow_mode = _parse_workflow_mode(get_first(payload, WORKFLOW_MODE_KEYS))
     requested_credential_mode = _parse_requested_credential_mode(get_first(payload, CREDENTIAL_MODE_KEYS))
+    includes_pdf = workflow_mode in {"pdf_only", "pdf_and_site"}
+    includes_omada = workflow_mode in {"pdf_and_site", "site_only"}
+    upload_omada_plan = includes_omada
+    upload_individual_pdfs = True if includes_pdf else None
+    upload_merged_pdf = True if includes_pdf else None
+    upload_txt_export = True if includes_pdf else None
+    upload_zip_export = True if includes_pdf else None
+    upload_ya_export = True if includes_pdf and includes_omada else None
 
     passwords_generated = False
     ssids_generated = False
@@ -486,7 +542,7 @@ def parse_payload(raw_payload: Any, settings: AppSettings) -> WorkflowBatchReque
     else:
         raw_ssids = parse_string_list(get_first(payload, SSIDS_KEYS), "ssids")
         identifiers = parse_string_list(get_first(payload, UNITS_KEYS), "units")
-        passwords = parse_string_list(get_first(payload, PASSWORDS_KEYS), "passwords")
+        passwords = _parse_password_lists(payload)
         unit_labels = parse_string_list(get_first(payload, UNIT_LABEL_KEYS), "unit_labels")
         vlan_values = parse_string_list(get_first(payload, VLAN_KEYS), "vlans")
 
@@ -572,6 +628,12 @@ def parse_payload(raw_payload: Any, settings: AppSettings) -> WorkflowBatchReque
             "omada_timezone": omada_timezone,
             "omada_scenario": omada_scenario,
             "omada_operation": omada_operation,
+            "upload_omada_plan": upload_omada_plan,
+            "upload_individual_pdfs": upload_individual_pdfs,
+            "upload_merged_pdf": upload_merged_pdf,
+            "upload_txt_export": upload_txt_export,
+            "upload_zip_export": upload_zip_export,
+            "upload_ya_export": upload_ya_export,
             "records": normalized_records,
         }
     )
